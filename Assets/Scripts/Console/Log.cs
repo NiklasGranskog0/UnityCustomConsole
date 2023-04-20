@@ -1,6 +1,8 @@
 using System;
 using System.Diagnostics;
+using System.Reflection;
 using UnityEngine;
+using Debug = UnityEngine.Debug;
 
 namespace Console
 {
@@ -15,7 +17,7 @@ namespace Console
         public LogType logType;
         public Rect rect;
 
-        private static StackTrace stacktrace;
+        private static StackTrace s_stacktrace;
 
         public Log(string message, string stackTrace, string[] logTags, string time, bool select, LogType logType)
         {
@@ -29,21 +31,21 @@ namespace Console
 
         public static void Message(object msg, params object[] formatValues)
         {
-            stacktrace = new StackTrace(true);
+            s_stacktrace = new StackTrace(true);
             SendMessage(msg, new[] { "Custom" }, LogType.Log, formatValues);
         }
 
         public static void Message(object msg, string logTag, LogType logType = LogType.Log,
             params object[] formatValues)
         {
-            stacktrace = new StackTrace(true);
+            s_stacktrace = new StackTrace(true);
             SendMessage(msg, new[] { logTag }, logType, formatValues);
         }
 
         public static void Message(object msg, string[] logTags, LogType logType = LogType.Log,
             params object[] formatValues)
         {
-            stacktrace = new StackTrace(true);
+            s_stacktrace = new StackTrace(true);
             SendMessage(msg, logTags, logType, formatValues);
         }
 
@@ -55,7 +57,14 @@ namespace Console
             }
 
             var time = $"[{DateTime.Now.TimeOfDay:hh\\:mm\\:ss}] ";
-            var lastFrame = stacktrace.GetFrame(stacktrace.FrameCount - 1);
+            var lastFrame = s_stacktrace.GetFrame(1);
+
+            var objectName = lastFrame.GetMethod().ReflectedType.Name;
+            var methodName = lastFrame.GetMethod().Name;
+
+            const string sendMessageMethod = "CustomConsole.Log:SendMessage(object,string[],LogType,object[])\n";
+            var logCaller = $"{objectName}:{methodName}()";
+
             var fileName = lastFrame.GetFileName();
             var lineNumber = lastFrame.GetFileLineNumber();
 
@@ -67,7 +76,7 @@ namespace Console
                 filePath = substring.Replace(@"\", "/");
             }
 
-            var hyperlink = $"(At <a href=\"{filePath}\" line=\"{lineNumber}\">{filePath}:{lineNumber}</a>)\n";
+            var hyperlink = sendMessageMethod + logCaller + $" (at <a href=\"{filePath}\" line=\"{lineNumber}\">{filePath}:{lineNumber}</a>)\n";
             var customLog = new Log(msg.ToString(), hyperlink, logTags, time, false, logType);
             CustomConsole.LogMessage(customLog);
         }

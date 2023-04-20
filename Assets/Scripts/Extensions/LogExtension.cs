@@ -5,8 +5,6 @@ namespace Extensions
 {
     public static class LogExtension
     {
-        
-
         public static string GUITextField(string text, float width)
         {
             return GUILayout.TextField(text, EditorStyles.toolbarSearchField, GUILayout.MaxWidth(width));
