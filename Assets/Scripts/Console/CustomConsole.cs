@@ -84,6 +84,9 @@ namespace Console
 
         private static readonly GUIContent s_errorPause =
             LogExtension.TextContent("Error Pause", "Pause Play Mode on error");
+
+        private static readonly GUIContent s_collapse =
+            LogExtension.TextContent("Collapse", "Collapse identical log messages");
         
         [MenuItem("Tools/Custom Console")]
         private static void OpenCustomConsole()
@@ -113,15 +116,9 @@ namespace Console
             }
         }
 
-        private void OnDestroy()
-        {
-            SubscribeToEvents(false);
-        }
-
-        private void OnDisable()
-        {
-            SubscribeToEvents(false);
-        }
+        private void Update() => Repaint();
+        private void OnDestroy() => SubscribeToEvents(false);
+        private void OnDisable() => SubscribeToEvents(false);
 
         private void OnEnable()
         {
@@ -198,11 +195,6 @@ namespace Console
             }
         }
 
-        private void Update()
-        {
-            Repaint();
-        }
-
         private void DrawMenuBar()
         {
             m_MenuBar = new Rect(0, 0, position.width, k_MenuBarHeight);
@@ -226,6 +218,7 @@ namespace Console
 
             m_DisableUnityLogs = LogExtension.GUIToggleButton(m_DisableUnityLogs, s_unityLogs, 40f);
             m_ErrorPause = LogExtension.GUIToggleButton(m_ErrorPause, s_errorPause, 70f);
+            m_Collapse = LogExtension.GUIToggleButton(m_Collapse, s_collapse, 70f);
 
             GUI.SetNextControlName("m_SearchString");
             m_SearchString = LogExtension.GUITextField(m_SearchString, 250f);
@@ -600,18 +593,18 @@ namespace Console
 
             link = link.Remove(0, asset.Length);
 
-            var startIndexForNumber = link.IndexOf(":", StringComparison.Ordinal);
+            var startIndexForNumber = link.LastIndexOf("=", StringComparison.Ordinal);
             if (startIndexForNumber > 0)
             {
-                var lineNumber = link.Substring(startIndexForNumber + 1, link.Length - startIndexForNumber - 5);
+                var lineNumber = link.Substring(startIndexForNumber + 2, link.Length - startIndexForNumber - 3);
 
                 var startIndex = link.IndexOf(@"""", StringComparison.Ordinal);
                 link = link.Remove(startIndex, (link.Length - startIndex));
 
-                var newLink = Application.dataPath + link;
+                var fileName = Application.dataPath + link;
                 int.TryParse(lineNumber, out var value);
 
-                UnityEditorInternal.InternalEditorUtility.OpenFileAtLineExternal(newLink, value);
+                UnityEditorInternal.InternalEditorUtility.OpenFileAtLineExternal(fileName, value);
             }
         }
 
@@ -619,6 +612,67 @@ namespace Console
         {
             var hyperlink = new StringBuilder();
             var lines = stacktrace[..].Split(new[] { "\n" }, StringSplitOptions.None);
+            const string textBeforeFilePath = " (at ";
+
+            foreach (var line in lines)
+            {
+                var filePathIndex = line.IndexOf(textBeforeFilePath, StringComparison.Ordinal);
+                
+                if (filePathIndex > 0)
+                {
+                    filePathIndex += textBeforeFilePath.Length;
+
+                    if (line[filePathIndex] != '<')
+                    {
+                        var filePathPart = line[filePathIndex..];
+                        var lineIndex = filePathPart.LastIndexOf(":", StringComparison.Ordinal);
+
+                        if (lineIndex > 0)
+                        {
+                            var endLineIndex = filePathPart.LastIndexOf(")", StringComparison.Ordinal);
+                            
+                            if (endLineIndex > 0)
+                            {
+                                var lineString =
+                                    filePathPart.Substring(lineIndex + 1, (endLineIndex) - (lineIndex + 1));
+                                var filePath = filePathPart[..lineIndex];
+
+                                hyperlink.Append(
+                                    $"{line[..filePathIndex]}" +
+                                    $"<a href=\"{filePath}\" line=\"{lineString}\">{filePath}:{lineString}</a>)\n");
+                                
+                                continue;
+                            }
+                        }
+                    }
+                }
+
+                hyperlink.Append(line + "\n");
+            }
+
+            if (hyperlink.Length > 0)
+            {
+                var str = hyperlink.ToString();
+                var length = str[..str.IndexOf(textBeforeFilePath, StringComparison.Ordinal)];
+                hyperlink.Remove(0, length.Length + textBeforeFilePath.Length);
+                str = hyperlink.ToString();
+
+                var startIndex = str.IndexOf(">", StringComparison.Ordinal);
+
+                if (startIndex > 0)
+                {
+                    var endIndex = str.Length - startIndex;
+                    hyperlink.Remove(startIndex, endIndex);
+                }
+            }
+
+            return hyperlink.ToString();
+        }
+
+        private string StacktraceHyperlink(string stacktraceText)
+        {
+            var hyperlink = new StringBuilder();
+            var lines = stacktraceText[..].Split(new[] { "\n" }, StringSplitOptions.None);
             const string textBeforeFilePath = " (at ";
 
             foreach (var line in lines)
@@ -647,63 +701,6 @@ namespace Console
                                 hyperlink.Append(
                                     $"{line[..filePathIndex]}" +
                                     $"<a href=\"{filePath}\" line=\"{lineString}\">{filePath}:{lineString}</a>)\n");
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (hyperlink.Length > 0)
-            {
-                var str = hyperlink.ToString();
-                var length = str[..str.IndexOf(textBeforeFilePath, StringComparison.Ordinal)];
-                hyperlink.Remove(0, length.Length + textBeforeFilePath.Length);
-                str = hyperlink.ToString();
-
-                var startIndex = str.IndexOf(")", StringComparison.Ordinal);
-
-                if (startIndex > 0)
-                {
-                    var endIndex = str.Length - startIndex;
-                    hyperlink.Remove(startIndex, endIndex);
-                }
-            }
-
-            return hyperlink.ToString();
-        }
-
-        private string StacktraceHyperlink(string stacktraceText)
-        {
-            var hyperlink = new StringBuilder();
-            var lines = stacktraceText.Substring(0).Split(new[] { "\n" }, StringSplitOptions.None);
-            const string textBeforeFilePath = " (at ";
-
-            foreach (var line in lines)
-            {
-                var filePathIndex = line.IndexOf(textBeforeFilePath, StringComparison.Ordinal);
-
-                if (filePathIndex > 0)
-                {
-                    filePathIndex += textBeforeFilePath.Length;
-
-                    if (line[filePathIndex] != '<')
-                    {
-                        var filePathPart = line.Substring(filePathIndex);
-                        var lineIndex = filePathPart.LastIndexOf(":", StringComparison.Ordinal);
-
-                        if (lineIndex > 0)
-                        {
-                            var endLineIndex = filePathPart.LastIndexOf(")", StringComparison.Ordinal);
-
-                            if (endLineIndex > 0)
-                            {
-                                var lineString =
-                                    filePathPart.Substring(lineIndex + 1, (endLineIndex) - (lineIndex + 1));
-                                var filePath = filePathPart.Substring(0, lineIndex);
-
-                                hyperlink.Append(
-                                    $"{line.Substring(0, filePathIndex)}" +
-                                    $"<a href=\"{filePath}\" line=\"{lineString}\">{filePath}:{lineString}</a>)\n");
 
                                 continue;
                             }
@@ -718,7 +715,7 @@ namespace Console
             {
                 hyperlink.Remove(hyperlink.Length - 1, 1);
             }
-
+            
             return hyperlink.ToString();
         }
     }
